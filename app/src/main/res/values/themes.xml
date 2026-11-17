@@ -1,0 +1,54 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Base.Theme.Ledger" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/ink</item>
+        <item name="colorOnPrimary">@color/paper</item>
+        <item name="colorSecondary">@color/income</item>
+        <item name="colorOnSecondary">@color/white</item>
+        <item name="colorSurface">@color/paper_card</item>
+        <item name="colorOnSurface">@color/ink</item>
+        <item name="colorOnSurfaceVariant">@color/ink_soft</item>
+        <item name="colorOutline">@color/line</item>
+        <item name="colorError">@color/expense</item>
+        <item name="android:colorBackground">@color/paper</item>
+        <item name="android:windowBackground">@color/paper</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="27">true</item>
+        <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
+        <item name="chipStyle">@style/Widget.Ledger.FilterChip</item>
+    </style>
+
+    <style name="Theme.Ledger" parent="Base.Theme.Ledger" />
+
+    <style name="Widget.Ledger.FilterChip" parent="Widget.Material3.Chip.Filter">
+        <item name="chipBackgroundColor">@color/chip_bg</item>
+        <item name="android:textColor">@color/chip_text</item>
+        <item name="checkedIconVisible">false</item>
+        <item name="chipStrokeWidth">0dp</item>
+        <item name="chipMinHeight">36dp</item>
+    </style>
+
+    <style name="Theme.Ledger.BottomSheet" parent="ThemeOverlay.Material3.BottomSheetDialog">
+        <item name="colorPrimary">@color/ink</item>
+        <item name="colorOnPrimary">@color/paper</item>
+        <item name="colorSurface">@color/paper_card</item>
+        <item name="colorOnSurface">@color/ink</item>
+        <item name="android:navigationBarColor">@color/paper_card</item>
+        <item name="bottomSheetStyle">@style/Widget.Ledger.BottomSheet</item>
+        <item name="chipStyle">@style/Widget.Ledger.FilterChip</item>
+    </style>
+
+    <style name="Widget.Ledger.BottomSheet" parent="Widget.Material3.BottomSheet.Modal">
+        <item name="backgroundTint">@color/paper_card</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.Ledger.Sheet</item>
+    </style>
+
+    <style name="ShapeAppearance.Ledger.Sheet" parent="ShapeAppearance.Material3.LargeComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSizeTopLeft">28dp</item>
+        <item name="cornerSizeTopRight">28dp</item>
+        <item name="cornerSizeBottomLeft">0dp</item>
+        <item name="cornerSizeBottomRight">0dp</item>
+    </style>
+</resources>

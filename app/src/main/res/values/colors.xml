@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="paper">#F3EEE4</color>
+    <color name="paper_card">#FFFCF8</color>
+    <color name="ink">#1C1915</color>
+    <color name="ink_soft">#6F675E</color>
+    <color name="line">#E4DCCE</color>
+    <color name="chip">#E8E0D2</color>
+    <color name="watermark">#DDD4C4</color>
+    <color name="expense">#C2410C</color>
+    <color name="income">#2F6B45</color>
+    <color name="swipe">#C2410C</color>
+    <color name="cover">#1E3F34</color>
+    <color name="on_cover">#F6F1E7</color>
+    <color name="on_cover_muted">#C9D5CC</color>
+    <color name="on_cover_income">#D7F0E0</color>
+    <color name="on_cover_expense">#F2C2A8</color>
+    <color name="on_cover_negative">#F2C2A8</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="black">#FF000000</color>
+</resources>
