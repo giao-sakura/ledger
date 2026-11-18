@@ -66,4 +66,15 @@
     <string name="ratio_expense">支出 %1$d%%  ·  %2$s</string>
     <string name="ratio_empty">这段时间还没有收支</string>
     <string name="ratio_description">收支比例，收入百分之%1$d，支出百分之%2$d</string>
+    <string name="section_ledger">记账</string>
+    <string name="section_diary">日记</string>
+    <string name="add_diary">写日记</string>
+    <string name="new_diary">写日记</string>
+    <string name="edit_diary">编辑日记</string>
+    <string name="diary_hint">今天发生了什么</string>
+    <string name="diary_body_error">写点内容再保存</string>
+    <string name="diary_empty_title">这段时间还没有日记</string>
+    <string name="diary_empty_subtitle">写下今天，以后翻得回来</string>
+    <string name="delete_diary">删除这篇日记</string>
+    <string name="delete_diary_confirm">确定删除这篇日记？</string>
 </resources>

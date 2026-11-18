@@ -20,8 +20,13 @@ import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.example.ledger.data.DiaryEntry;
 import com.example.ledger.data.Transaction;
 import com.example.ledger.databinding.ActivityMainBinding;
+import com.example.ledger.ui.DiaryAdapter;
+import com.example.ledger.ui.DiarySheet;
+import com.example.ledger.ui.DiaryUiState;
+import com.example.ledger.ui.DiaryViewModel;
 import com.example.ledger.ui.EditorSheet;
 import com.example.ledger.ui.LedgerAdapter;
 import com.example.ledger.ui.LedgerUiState;
@@ -34,7 +39,10 @@ import java.time.LocalDate;
 public class MainActivity extends AppCompatActivity {
     private ActivityMainBinding binding;
     private LedgerViewModel viewModel;
+    private DiaryViewModel diaryViewModel;
     private final LedgerAdapter adapter = new LedgerAdapter();
+    private final DiaryAdapter diaryAdapter = new DiaryAdapter();
+    private boolean diaryMode;
     private final Paint swipePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint swipeTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private String deleteLabel;
@@ -52,6 +60,7 @@ public class MainActivity extends AppCompatActivity {
         });
 
         viewModel = new ViewModelProvider(this).get(LedgerViewModel.class);
+        diaryViewModel = new ViewModelProvider(this).get(DiaryViewModel.class);
         deleteLabel = getString(R.string.delete);
         swipePaint.setColor(ContextCompat.getColor(this, R.color.swipe));
         swipeTextPaint.setColor(ContextCompat.getColor(this, R.color.white));
@@ -62,16 +71,32 @@ public class MainActivity extends AppCompatActivity {
         ));
 
         adapter.setListener(transaction -> EditorSheet.open(getSupportFragmentManager(), transaction));
+        diaryAdapter.setListener(entry -> DiarySheet.open(getSupportFragmentManager(), entry, null));
         binding.list.setLayoutManager(new LinearLayoutManager(this));
         binding.list.setAdapter(adapter);
         attachSwipe();
 
-        binding.prevMonth.setOnClickListener(v -> viewModel.shiftMonth(-1));
-        binding.nextMonth.setOnClickListener(v -> viewModel.shiftMonth(1));
+        binding.prevMonth.setOnClickListener(v -> shiftMonth(-1));
+        binding.nextMonth.setOnClickListener(v -> shiftMonth(1));
         binding.monthLabel.setOnClickListener(v -> showRangeDialog());
         binding.rangeHint.setOnClickListener(v -> showRangeDialog());
-        binding.todayButton.setOnClickListener(v -> viewModel.goToCurrentMonth());
-        binding.fab.setOnClickListener(v -> EditorSheet.open(getSupportFragmentManager(), null));
+        binding.todayButton.setOnClickListener(v -> {
+            viewModel.goToCurrentMonth();
+            diaryViewModel.goToCurrentMonth();
+        });
+        binding.fab.setOnClickListener(v -> {
+            if (diaryMode) {
+                DiarySheet.open(getSupportFragmentManager(), null, diaryViewModel.suggestedDate());
+            } else {
+                EditorSheet.open(getSupportFragmentManager(), null);
+            }
+        });
+        binding.sectionGroup.setOnCheckedStateChangeListener((group, checkedIds) -> {
+            if (checkedIds.isEmpty()) {
+                return;
+            }
+            showSection(checkedIds.get(0) == R.id.sectionDiary);
+        });
         binding.filterGroup.setOnCheckedStateChangeListener((group, checkedIds) -> {
             if (checkedIds.isEmpty()) {
                 return;
@@ -107,7 +132,41 @@ public class MainActivity extends AppCompatActivity {
                 );
             }
         });
+        getSupportFragmentManager().setFragmentResultListener(DiarySheet.REQUEST, this, (requestKey, bundle) -> {
+            String action = bundle.getString(DiarySheet.EXTRA_ACTION);
+            if (DiarySheet.ACTION_DELETE.equals(action)) {
+                DiaryEntry entry = diaryViewModel.find(bundle.getLong(DiarySheet.EXTRA_ID));
+                if (entry != null) {
+                    DiaryEntry snapshot = entry.copy();
+                    diaryViewModel.remove(snapshot);
+                    showDiaryUndo(snapshot);
+                }
+                return;
+            }
+            if (DiarySheet.ACTION_SAVE.equals(action)) {
+                diaryViewModel.save(
+                        bundle.getLong(DiarySheet.EXTRA_ID),
+                        bundle.getString(DiarySheet.EXTRA_BODY),
+                        bundle.getLong(DiarySheet.EXTRA_TIME)
+                );
+            }
+        });
         viewModel.getUi().observe(this, this::render);
+        diaryViewModel.getUi().observe(this, this::renderDiary);
+    }
+
+    private void shiftMonth(int delta) {
+        viewModel.shiftMonth(delta);
+        diaryViewModel.shiftMonth(delta);
+    }
+
+    private void showSection(boolean diary) {
+        diaryMode = diary;
+        binding.titleLabel.setText(diary ? R.string.section_diary : R.string.title);
+        binding.summary.setVisibility(diary ? View.GONE : View.VISIBLE);
+        binding.filterGroup.setVisibility(diary ? View.GONE : View.VISIBLE);
+        binding.fab.setText(diary ? R.string.add_diary : R.string.add_entry);
+        binding.list.setAdapter(diary ? diaryAdapter : adapter);
     }
 
     private void render(LedgerUiState state) {
@@ -149,6 +208,18 @@ public class MainActivity extends AppCompatActivity {
         adapter.submit(state.rows);
     }
 
+    private void renderDiary(DiaryUiState state) {
+        if (state == null) {
+            return;
+        }
+        if (diaryMode) {
+            binding.monthLabel.setText(state.monthLabel);
+            binding.todayButton.setVisibility(state.showBackToToday ? View.VISIBLE : View.GONE);
+            binding.monthLabel.setContentDescription(getString(R.string.range_description, state.monthLabel));
+        }
+        diaryAdapter.submit(state.rows);
+    }
+
     private void showRangeDialog() {
         View form = getLayoutInflater().inflate(R.layout.dialog_range, null);
         TextView startValue = form.findViewById(R.id.startValue);
@@ -180,6 +251,7 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
             viewModel.setRange(draftStart[0], draftEnd[0]);
+            diaryViewModel.setRange(draftStart[0], draftEnd[0]);
             dialog.dismiss();
         }));
         dialog.show();
@@ -198,6 +270,14 @@ public class MainActivity extends AppCompatActivity {
 
     private String formatFullDate(LocalDate date) {
         return getString(R.string.year_month_day, date.getYear(), date.getMonthValue(), date.getDayOfMonth());
+    }
+
+    private void showDiaryUndo(DiaryEntry snapshot) {
+        Snackbar snackbar = Snackbar.make(binding.main, R.string.deleted, Snackbar.LENGTH_LONG);
+        snackbar.setAnchorView(binding.fab);
+        snackbar.setActionTextColor(ContextCompat.getColor(this, R.color.income));
+        snackbar.setAction(R.string.undo, v -> diaryViewModel.restore(snapshot));
+        snackbar.show();
     }
 
     private void showUndo(Transaction snapshot) {
@@ -220,7 +300,9 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public int getSwipeDirs(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder) {
-                if (!adapter.canSwipe(viewHolder.getBindingAdapterPosition())) {
+                int position = viewHolder.getBindingAdapterPosition();
+                boolean canSwipe = diaryMode ? diaryAdapter.canSwipe(position) : adapter.canSwipe(position);
+                if (!canSwipe) {
                     return 0;
                 }
                 return super.getSwipeDirs(recyclerView, viewHolder);
@@ -229,6 +311,21 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onSwiped(RecyclerView.ViewHolder viewHolder, int direction) {
                 int position = viewHolder.getBindingAdapterPosition();
+                if (diaryMode) {
+                    DiaryEntry entry = diaryAdapter.entryAt(position);
+                    if (entry == null) {
+                        if (position != RecyclerView.NO_POSITION) {
+                            diaryAdapter.notifyItemChanged(position);
+                        }
+                        return;
+                    }
+                    DiaryEntry snapshot = entry.copy();
+                    binding.list.post(() -> {
+                        diaryViewModel.remove(snapshot);
+                        showDiaryUndo(snapshot);
+                    });
+                    return;
+                }
                 Transaction transaction = adapter.transactionAt(position);
                 if (transaction == null) {
                     if (position != RecyclerView.NO_POSITION) {
