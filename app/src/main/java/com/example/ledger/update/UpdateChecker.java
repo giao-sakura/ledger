@@ -16,7 +16,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class UpdateChecker {
-    public static final String LATEST_URL = "https://api.github.com/repos/giao-sakura/ledger/releases/latest";
+    public static final String LATEST_URL = "https://gitee.com/api/v5/repos/giaodeyinghua/ledger/releases/latest";
+    private static final String RELEASE_PAGE = "https://gitee.com/giaodeyinghua/ledger/releases/tag/";
 
     private static final ExecutorService IO = Executors.newSingleThreadExecutor(runnable -> new Thread(runnable, "app-update"));
 
@@ -54,7 +55,7 @@ public final class UpdateChecker {
     private static Result fetch() {
         HttpURLConnection connection = null;
         try {
-            connection = open(LATEST_URL);
+            connection = open(LATEST_URL, true);
             int code = connection.getResponseCode();
             if (code == HttpURLConnection.HTTP_NOT_FOUND) {
                 return Result.latest();
@@ -70,6 +71,9 @@ public final class UpdateChecker {
             }
             String notes = json.optString("body", "").trim();
             String page = json.optString("html_url", "");
+            if (page.isEmpty()) {
+                page = RELEASE_PAGE + tag;
+            }
             String apk = apkUrl(json.optJSONArray("assets"));
             return Result.update(version, notes, apk, page);
         } catch (Exception ignored) {
@@ -114,7 +118,7 @@ public final class UpdateChecker {
                 return false;
             }
             File temporary = new File(destination.getAbsolutePath() + ".part");
-            connection = open(url);
+            connection = open(url, false);
             if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
                 return false;
             }
@@ -166,13 +170,15 @@ public final class UpdateChecker {
         }
     }
 
-    private static HttpURLConnection open(String address) throws Exception {
+    private static HttpURLConnection open(String address, boolean json) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(address).openConnection();
         connection.setInstanceFollowRedirects(true);
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(60000);
         connection.setRequestProperty("User-Agent", "ledger-android");
-        connection.setRequestProperty("Accept", "application/vnd.github+json");
+        if (json) {
+            connection.setRequestProperty("Accept", "application/json");
+        }
         return connection;
     }
 
