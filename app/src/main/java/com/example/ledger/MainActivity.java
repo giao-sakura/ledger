@@ -31,6 +31,7 @@ import com.example.ledger.ui.EditorSheet;
 import com.example.ledger.ui.LedgerAdapter;
 import com.example.ledger.ui.LedgerUiState;
 import com.example.ledger.ui.LedgerViewModel;
+import com.example.ledger.update.UpdateFlow;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 
@@ -43,6 +44,7 @@ public class MainActivity extends AppCompatActivity {
     private final LedgerAdapter adapter = new LedgerAdapter();
     private final DiaryAdapter diaryAdapter = new DiaryAdapter();
     private boolean diaryMode;
+    private UpdateFlow updateFlow;
     private final Paint swipePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint swipeTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private String deleteLabel;
@@ -70,6 +72,8 @@ public class MainActivity extends AppCompatActivity {
                 getResources().getDisplayMetrics()
         ));
 
+        updateFlow = new UpdateFlow(this, binding.versionEntry);
+        updateFlow.attach();
         adapter.setListener(transaction -> EditorSheet.open(getSupportFragmentManager(), transaction));
         diaryAdapter.setListener(entry -> DiarySheet.open(getSupportFragmentManager(), entry, null));
         binding.list.setLayoutManager(new LinearLayoutManager(this));
@@ -153,6 +157,14 @@ public class MainActivity extends AppCompatActivity {
         });
         viewModel.getUi().observe(this, this::render);
         diaryViewModel.getUi().observe(this, this::renderDiary);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (updateFlow != null) {
+            updateFlow.onResume();
+        }
     }
 
     private void shiftMonth(int delta) {

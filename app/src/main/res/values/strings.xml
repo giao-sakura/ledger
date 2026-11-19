@@ -77,4 +77,17 @@
     <string name="diary_empty_subtitle">写下今天，以后翻得回来</string>
     <string name="delete_diary">删除这篇日记</string>
     <string name="delete_diary_confirm">确定删除这篇日记？</string>
+    <string name="update_entry">%1$s · 检查更新</string>
+    <string name="update_checking">正在检查…</string>
+    <string name="update_latest">已经是最新版本</string>
+    <string name="update_failed">检查失败，请稍后再试</string>
+    <string name="update_available">发现新版本 %1$s</string>
+    <string name="update_now">更新</string>
+    <string name="update_later">以后再说</string>
+    <string name="update_downloading">正在下载 %1$d%%</string>
+    <string name="update_downloading_unknown">正在下载…</string>
+    <string name="update_download_failed">下载失败，请稍后再试</string>
+    <string name="update_no_apk">这个版本还没有安装包</string>
+    <string name="update_open_release">去网页查看</string>
+    <string name="update_notes_empty">可以安装这个新版本</string>
 </resources>
