@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
+import android.view.View;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AlertDialog;
@@ -30,9 +31,9 @@ public final class UpdateFlow {
         this.entry = entry;
     }
 
-    public void attach() {
+    public void attach(View trigger) {
         showIdle();
-        entry.setOnClickListener(v -> check());
+        trigger.setOnClickListener(v -> check());
     }
 
     public void onResume() {
@@ -175,7 +176,7 @@ public final class UpdateFlow {
     }
 
     private void showIdle() {
-        entry.setText(activity.getString(R.string.update_entry, currentVersion()));
+        entry.setText(activity.getString(R.string.update_version, currentVersion()));
     }
 
     private String currentVersion() {

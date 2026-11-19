@@ -1,11 +1,13 @@
 package com.example.ledger;
 
 import android.app.DatePickerDialog;
+import android.content.Intent;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.os.Bundle;
 import android.util.TypedValue;
 import android.view.View;
+import android.widget.EditText;
 import android.widget.TextView;
 
 import androidx.activity.EdgeToEdge;
@@ -16,12 +18,15 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.lifecycle.ViewModelProvider;
+import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.example.ledger.data.ClothingItem;
 import com.example.ledger.data.DiaryEntry;
 import com.example.ledger.data.Transaction;
+import com.example.ledger.data.WishItem;
 import com.example.ledger.databinding.ActivityMainBinding;
 import com.example.ledger.ui.DiaryAdapter;
 import com.example.ledger.ui.DiarySheet;
@@ -31,20 +36,56 @@ import com.example.ledger.ui.EditorSheet;
 import com.example.ledger.ui.LedgerAdapter;
 import com.example.ledger.ui.LedgerUiState;
 import com.example.ledger.ui.LedgerViewModel;
-import com.example.ledger.update.UpdateFlow;
+import com.example.ledger.wardrobe.ClothingAdapter;
+import com.example.ledger.wardrobe.ClothingSheet;
+import com.example.ledger.wardrobe.OutfitAdapter;
+import com.example.ledger.wardrobe.OutfitSheet;
+import com.example.ledger.wardrobe.WardrobeUi;
+import com.example.ledger.wardrobe.WardrobeViewModel;
+import com.example.ledger.wardrobe.WishAdapter;
+import com.google.android.material.chip.Chip;
+import com.google.android.material.chip.ChipGroup;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 
 import java.time.LocalDate;
 
 public class MainActivity extends AppCompatActivity {
+    private static final int SECTION_LEDGER = 0;
+    private static final int SECTION_DIARY = 1;
+    private static final int SECTION_WARDROBE = 2;
+    private static final int TAB_CLOTHES = 0;
+    private static final int TAB_OUTFITS = 1;
+    private static final int TAB_WISHES = 2;
+    private static final String[] CLOTHING_CATEGORIES = {"外套", "内搭", "裤子", "裙子", "鞋子", "配饰"};
+    private static final String[] CLOTHING_COLORS = {"黑", "白", "灰", "米", "卡其", "棕", "红", "橙", "黄", "绿", "蓝", "紫", "粉"};
+
     private ActivityMainBinding binding;
     private LedgerViewModel viewModel;
     private DiaryViewModel diaryViewModel;
+    private WardrobeViewModel wardrobeViewModel;
     private final LedgerAdapter adapter = new LedgerAdapter();
     private final DiaryAdapter diaryAdapter = new DiaryAdapter();
-    private boolean diaryMode;
-    private UpdateFlow updateFlow;
+    private final ClothingAdapter clothingAdapter = new ClothingAdapter(this::editClothing);
+    private final OutfitAdapter outfitAdapter = new OutfitAdapter(this::openOutfit);
+    private final WishAdapter wishAdapter = new WishAdapter(new WishAdapter.Listener() {
+        @Override
+        public void onBought(WishItem item) {
+            ClothingSheet.open(getSupportFragmentManager(), null, item.id, item.category, item.need);
+        }
+
+        @Override
+        public void onDelete(WishItem item) {
+            wardrobeViewModel.deleteWish(item.id);
+        }
+    });
+    private LinearLayoutManager listLayout;
+    private GridLayoutManager clothingGrid;
+    private int section = SECTION_LEDGER;
+    private int wardrobeTab = TAB_CLOTHES;
+    private String filterCategory = "";
+    private int filterSeason;
+    private String filterColor = "";
     private final Paint swipePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint swipeTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private String deleteLabel;
@@ -63,6 +104,7 @@ public class MainActivity extends AppCompatActivity {
 
         viewModel = new ViewModelProvider(this).get(LedgerViewModel.class);
         diaryViewModel = new ViewModelProvider(this).get(DiaryViewModel.class);
+        wardrobeViewModel = new ViewModelProvider(this).get(WardrobeViewModel.class);
         deleteLabel = getString(R.string.delete);
         swipePaint.setColor(ContextCompat.getColor(this, R.color.swipe));
         swipeTextPaint.setColor(ContextCompat.getColor(this, R.color.white));
@@ -72,13 +114,21 @@ public class MainActivity extends AppCompatActivity {
                 getResources().getDisplayMetrics()
         ));
 
-        updateFlow = new UpdateFlow(this, binding.versionEntry);
-        updateFlow.attach();
+        binding.settingsButton.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
         adapter.setListener(transaction -> EditorSheet.open(getSupportFragmentManager(), transaction));
         diaryAdapter.setListener(entry -> DiarySheet.open(getSupportFragmentManager(), entry, null));
-        binding.list.setLayoutManager(new LinearLayoutManager(this));
+        listLayout = new LinearLayoutManager(this);
+        clothingGrid = new GridLayoutManager(this, 2);
+        clothingGrid.setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
+            @Override
+            public int getSpanSize(int position) {
+                return clothingAdapter.fullSpan(position) ? 2 : 1;
+            }
+        });
+        binding.list.setLayoutManager(listLayout);
         binding.list.setAdapter(adapter);
         attachSwipe();
+        buildWardrobeFilters();
 
         binding.prevMonth.setOnClickListener(v -> shiftMonth(-1));
         binding.nextMonth.setOnClickListener(v -> shiftMonth(1));
@@ -89,8 +139,10 @@ public class MainActivity extends AppCompatActivity {
             diaryViewModel.goToCurrentMonth();
         });
         binding.fab.setOnClickListener(v -> {
-            if (diaryMode) {
+            if (section == SECTION_DIARY) {
                 DiarySheet.open(getSupportFragmentManager(), null, diaryViewModel.suggestedDate());
+            } else if (section == SECTION_WARDROBE) {
+                openWardrobeAdd();
             } else {
                 EditorSheet.open(getSupportFragmentManager(), null);
             }
@@ -99,8 +151,32 @@ public class MainActivity extends AppCompatActivity {
             if (checkedIds.isEmpty()) {
                 return;
             }
-            showSection(checkedIds.get(0) == R.id.sectionDiary);
+            int checkedId = checkedIds.get(0);
+            int next = SECTION_LEDGER;
+            if (checkedId == R.id.sectionDiary) {
+                next = SECTION_DIARY;
+            } else if (checkedId == R.id.sectionWardrobe) {
+                next = SECTION_WARDROBE;
+            }
+            showSection(next);
         });
+        binding.wardrobeTabs.setOnCheckedStateChangeListener((group, checkedIds) -> {
+            if (checkedIds.isEmpty()) {
+                return;
+            }
+            int checkedId = checkedIds.get(0);
+            wardrobeTab = TAB_CLOTHES;
+            if (checkedId == R.id.wardrobeOutfits) {
+                wardrobeTab = TAB_OUTFITS;
+            } else if (checkedId == R.id.wardrobeWishes) {
+                wardrobeTab = TAB_WISHES;
+            }
+            binding.clothingFilters.setVisibility(wardrobeTab == TAB_CLOTHES ? View.VISIBLE : View.GONE);
+            if (section == SECTION_WARDROBE) {
+                applyList();
+            }
+        });
+        binding.cityButton.setOnClickListener(v -> showCityDialog());
         binding.filterGroup.setOnCheckedStateChangeListener((group, checkedIds) -> {
             if (checkedIds.isEmpty()) {
                 return;
@@ -157,14 +233,16 @@ public class MainActivity extends AppCompatActivity {
         });
         viewModel.getUi().observe(this, this::render);
         diaryViewModel.getUi().observe(this, this::renderDiary);
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (updateFlow != null) {
-            updateFlow.onResume();
-        }
+        wardrobeViewModel.getUi().observe(this, this::renderWardrobe);
+        wardrobeViewModel.getNotice().observe(this, text -> {
+            if (text == null || text.isEmpty()) {
+                return;
+            }
+            Snackbar snackbar = Snackbar.make(binding.main, text, Snackbar.LENGTH_LONG);
+            snackbar.setAnchorView(binding.fab);
+            snackbar.show();
+            wardrobeViewModel.consumeNotice();
+        });
     }
 
     private void shiftMonth(int delta) {
@@ -172,20 +250,72 @@ public class MainActivity extends AppCompatActivity {
         diaryViewModel.shiftMonth(delta);
     }
 
-    private void showSection(boolean diary) {
-        diaryMode = diary;
-        binding.titleLabel.setText(diary ? R.string.section_diary : R.string.title);
-        binding.summary.setVisibility(diary ? View.GONE : View.VISIBLE);
-        binding.filterGroup.setVisibility(diary ? View.GONE : View.VISIBLE);
-        binding.fab.setText(diary ? R.string.add_diary : R.string.add_entry);
-        binding.list.setAdapter(diary ? diaryAdapter : adapter);
+    private void showSection(int next) {
+        section = next;
+        boolean ledger = next == SECTION_LEDGER;
+        boolean diary = next == SECTION_DIARY;
+        boolean wardrobe = next == SECTION_WARDROBE;
+        binding.titleLabel.setText(diary ? R.string.section_diary : wardrobe ? R.string.section_wardrobe : R.string.title);
+        binding.monthRow.setVisibility(wardrobe ? View.GONE : View.VISIBLE);
+        binding.rangeHint.setVisibility(wardrobe ? View.GONE : View.VISIBLE);
+        binding.summary.setVisibility(ledger ? View.VISIBLE : View.GONE);
+        binding.filterGroup.setVisibility(ledger ? View.VISIBLE : View.GONE);
+        binding.wardrobePanel.setVisibility(wardrobe ? View.VISIBLE : View.GONE);
+        LedgerUiState ledgerState = viewModel.getUi().getValue();
+        DiaryUiState diaryState = diaryViewModel.getUi().getValue();
+        if (ledger && ledgerState != null) {
+            binding.monthLabel.setText(ledgerState.monthLabel);
+            binding.todayButton.setVisibility(ledgerState.showBackToToday ? View.VISIBLE : View.GONE);
+        } else if (diary && diaryState != null) {
+            binding.monthLabel.setText(diaryState.monthLabel);
+            binding.todayButton.setVisibility(diaryState.showBackToToday ? View.VISIBLE : View.GONE);
+        } else {
+            binding.todayButton.setVisibility(View.GONE);
+        }
+        applyList();
+    }
+
+    private void applyList() {
+        int fab = R.string.add_entry;
+        if (section == SECTION_DIARY) {
+            binding.list.setLayoutManager(listLayout);
+            binding.list.setAdapter(diaryAdapter);
+            fab = R.string.add_diary;
+        } else if (section == SECTION_WARDROBE) {
+            if (wardrobeTab == TAB_OUTFITS) {
+                binding.list.setLayoutManager(listLayout);
+                binding.list.setAdapter(outfitAdapter);
+                fab = R.string.wardrobe_outfit;
+            } else if (wardrobeTab == TAB_WISHES) {
+                binding.list.setLayoutManager(listLayout);
+                binding.list.setAdapter(wishAdapter);
+                fab = R.string.wardrobe_wish;
+            } else {
+                binding.list.setLayoutManager(clothingGrid);
+                binding.list.setAdapter(clothingAdapter);
+                fab = R.string.wardrobe_add;
+            }
+        } else {
+            binding.list.setLayoutManager(listLayout);
+            binding.list.setAdapter(adapter);
+        }
+        binding.fab.setText(fab);
+    }
+
+    private void openWardrobeAdd() {
+        if (wardrobeTab == TAB_OUTFITS) {
+            OutfitSheet.open(getSupportFragmentManager());
+        } else if (wardrobeTab == TAB_WISHES) {
+            showWishDialog();
+        } else {
+            ClothingSheet.open(getSupportFragmentManager(), null, 0, null, null);
+        }
     }
 
     private void render(LedgerUiState state) {
         if (state == null) {
             return;
         }
-        binding.monthLabel.setText(state.monthLabel);
         binding.balance.setText(state.balance);
         binding.balance.setTextColor(ContextCompat.getColor(
                 this,
@@ -205,8 +335,11 @@ public class MainActivity extends AppCompatActivity {
             binding.dailyLabel.setVisibility(View.VISIBLE);
             binding.dailyLabel.setText(state.daily);
         }
-        binding.todayButton.setVisibility(state.showBackToToday ? View.VISIBLE : View.GONE);
-        binding.monthLabel.setContentDescription(getString(R.string.range_description, state.monthLabel));
+        if (section == SECTION_LEDGER) {
+            binding.monthLabel.setText(state.monthLabel);
+            binding.todayButton.setVisibility(state.showBackToToday ? View.VISIBLE : View.GONE);
+            binding.monthLabel.setContentDescription(getString(R.string.range_description, state.monthLabel));
+        }
         int expected = R.id.chipAll;
         if (state.filter == LedgerUiState.FILTER_EXPENSE) {
             expected = R.id.chipExpense;
@@ -224,12 +357,26 @@ public class MainActivity extends AppCompatActivity {
         if (state == null) {
             return;
         }
-        if (diaryMode) {
+        if (section == SECTION_DIARY) {
             binding.monthLabel.setText(state.monthLabel);
             binding.todayButton.setVisibility(state.showBackToToday ? View.VISIBLE : View.GONE);
             binding.monthLabel.setContentDescription(getString(R.string.range_description, state.monthLabel));
         }
         diaryAdapter.submit(state.rows);
+    }
+
+    private void renderWardrobe(WardrobeUi state) {
+        if (state == null) {
+            return;
+        }
+        clothingAdapter.submit(state.clothes, state.loaded);
+        outfitAdapter.submit(state.outfits, state.loaded);
+        wishAdapter.submit(state.wishes, state.loaded);
+        if (state.city == null || state.city.isEmpty()) {
+            binding.cityButton.setText(R.string.city_unset);
+        } else {
+            binding.cityButton.setText(getString(R.string.city_set, state.city));
+        }
     }
 
     private void showRangeDialog() {
@@ -284,6 +431,153 @@ public class MainActivity extends AppCompatActivity {
         return getString(R.string.year_month_day, date.getYear(), date.getMonthValue(), date.getDayOfMonth());
     }
 
+    private void editClothing(ClothingItem item) {
+        ClothingSheet.open(getSupportFragmentManager(), item, 0, null, null);
+    }
+
+    private void openOutfit(WardrobeUi.OutfitCard card) {
+        String message = card.weather == null || card.weather.isEmpty()
+                ? getString(R.string.outfit_unplanned)
+                : card.weather;
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(card.outfit.name)
+                .setMessage(message)
+                .setPositiveButton(R.string.outfit_plan, (dialog, which) -> pickPlanDate(card))
+                .setNeutralButton(R.string.delete, (dialog, which) -> wardrobeViewModel.deleteOutfit(card.outfit))
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    private void pickPlanDate(WardrobeUi.OutfitCard card) {
+        LocalDate current = LocalDate.now();
+        if (card.plan != null && card.plan.planDate != null) {
+            current = LocalDate.parse(card.plan.planDate);
+        }
+        DatePickerDialog picker = new DatePickerDialog(
+                this,
+                (view, year, month, day) -> wardrobeViewModel.plan(card.outfit.id, LocalDate.of(year, month + 1, day)),
+                current.getYear(),
+                current.getMonthValue() - 1,
+                current.getDayOfMonth()
+        );
+        picker.show();
+    }
+
+    private void showCityDialog() {
+        EditText input = new EditText(this);
+        WardrobeUi state = wardrobeViewModel.getUi().getValue();
+        input.setText(state == null || state.city == null ? "" : state.city);
+        input.setHint(R.string.city_hint);
+        input.setSingleLine(true);
+        input.setTextColor(ContextCompat.getColor(this, R.color.ink));
+        int pad = Math.round(14 * getResources().getDisplayMetrics().density);
+        input.setPadding(pad, pad, pad, pad);
+        input.setBackgroundResource(R.drawable.bg_input);
+        android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
+        int side = Math.round(24 * getResources().getDisplayMetrics().density);
+        frame.setPadding(side, pad, side, 0);
+        frame.addView(input);
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.city_title)
+                .setView(frame)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.save, (dialog, which) -> wardrobeViewModel.setCity(input.getText().toString()))
+                .show();
+    }
+
+    private void showWishDialog() {
+        View form = getLayoutInflater().inflate(R.layout.dialog_wish, null);
+        EditText need = form.findViewById(R.id.wishNeed);
+        ChipGroup categories = form.findViewById(R.id.wishCategories);
+        for (int i = 0; i < CLOTHING_CATEGORIES.length; i++) {
+            Chip chip = filterChip(CLOTHING_CATEGORIES[i], CLOTHING_CATEGORIES[i]);
+            categories.addView(chip);
+            if (i == 0) {
+                chip.setChecked(true);
+            }
+        }
+        AlertDialog dialog = new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.wish_title)
+                .setView(form)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.save, null)
+                .create();
+        dialog.setOnShowListener(shown -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String text = need.getText().toString().trim();
+            if (text.isEmpty()) {
+                need.setError(getString(R.string.wish_need_error));
+                return;
+            }
+            Chip checked = categories.findViewById(categories.getCheckedChipId());
+            String category = checked == null ? CLOTHING_CATEGORIES[0] : checked.getText().toString();
+            wardrobeViewModel.saveWish(text, category);
+            dialog.dismiss();
+        }));
+        dialog.show();
+    }
+
+    private void buildWardrobeFilters() {
+        String[] categories = new String[CLOTHING_CATEGORIES.length + 1];
+        categories[0] = getString(R.string.filter_all);
+        System.arraycopy(CLOTHING_CATEGORIES, 0, categories, 1, CLOTHING_CATEGORIES.length);
+        String[] categoryValues = new String[categories.length];
+        categoryValues[0] = "";
+        System.arraycopy(CLOTHING_CATEGORIES, 0, categoryValues, 1, CLOTHING_CATEGORIES.length);
+        fillFilter(binding.categoryFilter, categories, categoryValues);
+
+        fillFilter(
+                binding.seasonFilter,
+                new String[]{getString(R.string.filter_all), "春", "夏", "秋", "冬"},
+                new Integer[]{0, ClothingItem.SPRING, ClothingItem.SUMMER, ClothingItem.AUTUMN, ClothingItem.WINTER}
+        );
+
+        String[] colors = new String[CLOTHING_COLORS.length + 1];
+        colors[0] = getString(R.string.filter_all);
+        System.arraycopy(CLOTHING_COLORS, 0, colors, 1, CLOTHING_COLORS.length);
+        String[] colorValues = new String[colors.length];
+        colorValues[0] = "";
+        System.arraycopy(CLOTHING_COLORS, 0, colorValues, 1, CLOTHING_COLORS.length);
+        fillFilter(binding.colorFilter, colors, colorValues);
+    }
+
+    private void fillFilter(ChipGroup group, String[] labels, Object[] values) {
+        for (int i = 0; i < labels.length; i++) {
+            Chip chip = filterChip(labels[i], values[i]);
+            group.addView(chip);
+            if (i == 0) {
+                chip.setChecked(true);
+            }
+        }
+        group.setOnCheckedStateChangeListener((chips, checkedIds) -> {
+            if (checkedIds.isEmpty() || wardrobeViewModel == null) {
+                return;
+            }
+            Chip chip = chips.findViewById(checkedIds.get(0));
+            if (chip == null) {
+                return;
+            }
+            if (group.getId() == R.id.seasonFilter && chip.getTag() instanceof Integer) {
+                filterSeason = (Integer) chip.getTag();
+            } else if (group.getId() == R.id.colorFilter && chip.getTag() instanceof String) {
+                filterColor = (String) chip.getTag();
+            } else if (chip.getTag() instanceof String) {
+                filterCategory = (String) chip.getTag();
+            }
+            wardrobeViewModel.filter(filterCategory, filterSeason, filterColor);
+        });
+    }
+
+    private Chip filterChip(String label, Object value) {
+        Chip chip = new Chip(this, null, com.google.android.material.R.attr.chipStyle);
+        chip.setId(View.generateViewId());
+        chip.setText(label);
+        chip.setCheckable(true);
+        chip.setCheckedIconVisible(false);
+        chip.setEnsureMinTouchTargetSize(false);
+        chip.setTag(value);
+        return chip;
+    }
+
     private void showDiaryUndo(DiaryEntry snapshot) {
         Snackbar snackbar = Snackbar.make(binding.main, R.string.deleted, Snackbar.LENGTH_LONG);
         snackbar.setAnchorView(binding.fab);
@@ -313,7 +607,10 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public int getSwipeDirs(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder) {
                 int position = viewHolder.getBindingAdapterPosition();
-                boolean canSwipe = diaryMode ? diaryAdapter.canSwipe(position) : adapter.canSwipe(position);
+                if (section == SECTION_WARDROBE) {
+                    return 0;
+                }
+                boolean canSwipe = section == SECTION_DIARY ? diaryAdapter.canSwipe(position) : adapter.canSwipe(position);
                 if (!canSwipe) {
                     return 0;
                 }
@@ -323,7 +620,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onSwiped(RecyclerView.ViewHolder viewHolder, int direction) {
                 int position = viewHolder.getBindingAdapterPosition();
-                if (diaryMode) {
+                if (section == SECTION_DIARY) {
                     DiaryEntry entry = diaryAdapter.entryAt(position);
                     if (entry == null) {
                         if (position != RecyclerView.NO_POSITION) {
